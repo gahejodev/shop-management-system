@@ -1,24 +1,215 @@
 'use strict';
-const KEY='shopdesk-v1';
-const initial={products:[],sales:[]};
-function load(){try{const d=JSON.parse(localStorage.getItem(KEY));return d&&Array.isArray(d.products)&&Array.isArray(d.sales)?d:structuredClone(initial)}catch{return structuredClone(initial)}}
-let data=load();
-const $=id=>document.getElementById(id);
-const money=n=>'Rs '+Number(n).toLocaleString('en-PK',{maximumFractionDigits:2});
-const save=()=>localStorage.setItem(KEY,JSON.stringify(data));
-const td=(text)=>{const el=document.createElement('td');el.textContent=String(text);return el};
-function render(){
- $('productsCount').textContent=data.products.length;
- $('stockValue').textContent=money(data.products.reduce((s,p)=>s+p.cost*p.stock,0));
- $('revenue').textContent=money(data.sales.reduce((s,x)=>s+x.revenue,0));
- $('profit').textContent=money(data.sales.reduce((s,x)=>s+x.profit,0));
- const term=$('search').value.trim().toLowerCase();$('inventory').replaceChildren();
- for(const p of data.products.filter(x=>x.name.toLowerCase().includes(term))){const tr=document.createElement('tr');[p.name,money(p.cost),money(p.price),p.stock].forEach(x=>tr.append(td(x)));const action=td('');const btn=document.createElement('button');btn.textContent='Delete';btn.className='danger';btn.onclick=()=>{if(confirm(`Delete ${p.name}? Previous sales remain in history.`)){data.products=data.products.filter(x=>x.id!==p.id);save();render()}};action.append(btn);tr.append(action);$('inventory').append(tr)}
- $('saleProduct').replaceChildren();for(const p of data.products){const opt=document.createElement('option');opt.value=p.id;opt.textContent=`${p.name} (${p.stock} in stock)`;$('saleProduct').append(opt)}
- $('sales').replaceChildren();for(const s of [...data.sales].reverse().slice(0,25)){const tr=document.createElement('tr');[new Date(s.date).toLocaleString(),s.name,s.quantity,money(s.revenue),money(s.profit)].forEach(x=>tr.append(td(x)));$('sales').append(tr)}
+
+const STORAGE_KEY = 'shopdesk-v1';
+const EMPTY_DATA = { products: [], sales: [] };
+
+const $ = (id) => document.getElementById(id);
+
+function loadData() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+
+    if (saved && Array.isArray(saved.products) && Array.isArray(saved.sales)) {
+      return saved;
+    }
+  } catch {
+    // Start with an empty shop if the saved data cannot be read.
+  }
+
+  return structuredClone(EMPTY_DATA);
 }
-$('productForm').addEventListener('submit',e=>{e.preventDefault();const name=$('name').value.trim();const cost=Number($('cost').value),price=Number($('price').value),stock=Number($('stock').value);if(!name||![cost,price,stock].every(Number.isFinite)||cost<0||price<0||!Number.isInteger(stock)||stock<0)return alert('Enter valid product details.');data.products.push({id:crypto.randomUUID(),name,cost,price,stock});save();e.target.reset();render()});
-$('saleForm').addEventListener('submit',e=>{e.preventDefault();const p=data.products.find(x=>x.id===$('saleProduct').value),quantity=Number($('quantity').value);if(!p||!Number.isInteger(quantity)||quantity<1||quantity>p.stock){$('message').textContent='Invalid quantity or insufficient stock.';return}p.stock-=quantity;data.sales.push({id:crypto.randomUUID(),date:new Date().toISOString(),name:p.name,quantity,revenue:quantity*p.price,profit:quantity*(p.price-p.cost)});save();render();$('message').textContent='Sale recorded successfully.'});
-$('search').addEventListener('input',render);
-$('export').addEventListener('click',()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`shopdesk-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+
+let shop = loadData();
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(shop));
+}
+
+function formatMoney(value) {
+  return 'Rs ' + Number(value).toLocaleString('en-PK', {
+    maximumFractionDigits: 2
+  });
+}
+
+function makeCell(value) {
+  const cell = document.createElement('td');
+  cell.textContent = String(value);
+  return cell;
+}
+
+function renderInventory() {
+  const searchTerm = $('search').value.trim().toLowerCase();
+  const inventory = $('inventory');
+
+  inventory.replaceChildren();
+
+  const matchingProducts = shop.products.filter((product) =>
+    product.name.toLowerCase().includes(searchTerm)
+  );
+
+  for (const product of matchingProducts) {
+    const row = document.createElement('tr');
+
+    [
+      product.name,
+      formatMoney(product.cost),
+      formatMoney(product.price),
+      product.stock
+    ].forEach((value) => row.append(makeCell(value)));
+
+    const actionCell = makeCell('');
+    const deleteButton = document.createElement('button');
+
+    deleteButton.textContent = 'Delete';
+    deleteButton.className = 'danger';
+    deleteButton.addEventListener('click', () => {
+      const confirmed = confirm(
+        `Delete ${product.name}? Previous sales will remain in the history.`
+      );
+
+      if (!confirmed) return;
+
+      shop.products = shop.products.filter((item) => item.id !== product.id);
+      saveData();
+      render();
+    });
+
+    actionCell.append(deleteButton);
+    row.append(actionCell);
+    inventory.append(row);
+  }
+}
+
+function renderSaleProductOptions() {
+  const select = $('saleProduct');
+  select.replaceChildren();
+
+  for (const product of shop.products) {
+    const option = document.createElement('option');
+    option.value = product.id;
+    option.textContent = `${product.name} (${product.stock} in stock)`;
+    select.append(option);
+  }
+}
+
+function renderRecentSales() {
+  const salesTable = $('sales');
+  salesTable.replaceChildren();
+
+  for (const sale of [...shop.sales].reverse().slice(0, 25)) {
+    const row = document.createElement('tr');
+
+    [
+      new Date(sale.date).toLocaleString(),
+      sale.name,
+      sale.quantity,
+      formatMoney(sale.revenue),
+      formatMoney(sale.profit)
+    ].forEach((value) => row.append(makeCell(value)));
+
+    salesTable.append(row);
+  }
+}
+
+function renderSummary() {
+  $('productsCount').textContent = shop.products.length;
+
+  const stockValue = shop.products.reduce(
+    (total, product) => total + product.cost * product.stock,
+    0
+  );
+  const revenue = shop.sales.reduce((total, sale) => total + sale.revenue, 0);
+  const grossProfit = shop.sales.reduce((total, sale) => total + sale.profit, 0);
+
+  $('stockValue').textContent = formatMoney(stockValue);
+  $('revenue').textContent = formatMoney(revenue);
+  $('profit').textContent = formatMoney(grossProfit);
+}
+
+function render() {
+  renderSummary();
+  renderInventory();
+  renderSaleProductOptions();
+  renderRecentSales();
+}
+
+$('productForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+
+  const name = $('name').value.trim();
+  const cost = Number($('cost').value);
+  const price = Number($('price').value);
+  const stock = Number($('stock').value);
+
+  const validNumbers = [cost, price, stock].every(Number.isFinite);
+  const validStock = Number.isInteger(stock) && stock >= 0;
+
+  if (!name || !validNumbers || cost < 0 || price < 0 || !validStock) {
+    alert('Enter valid product details.');
+    return;
+  }
+
+  shop.products.push({
+    id: crypto.randomUUID(),
+    name,
+    cost,
+    price,
+    stock
+  });
+
+  saveData();
+  event.target.reset();
+  render();
+});
+
+$('saleForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+
+  const productId = $('saleProduct').value;
+  const product = shop.products.find((item) => item.id === productId);
+  const quantity = Number($('quantity').value);
+  const message = $('message');
+
+  if (
+    !product ||
+    !Number.isInteger(quantity) ||
+    quantity < 1 ||
+    quantity > product.stock
+  ) {
+    message.textContent = 'Invalid quantity or insufficient stock.';
+    return;
+  }
+
+  product.stock -= quantity;
+
+  shop.sales.push({
+    id: crypto.randomUUID(),
+    date: new Date().toISOString(),
+    name: product.name,
+    quantity,
+    revenue: quantity * product.price,
+    profit: quantity * (product.price - product.cost)
+  });
+
+  saveData();
+  render();
+  message.textContent = 'Sale recorded successfully.';
+});
+
+$('search').addEventListener('input', renderInventory);
+
+$('export').addEventListener('click', () => {
+  const backup = new Blob([JSON.stringify(shop, null, 2)], {
+    type: 'application/json'
+  });
+  const downloadUrl = URL.createObjectURL(backup);
+  const link = document.createElement('a');
+
+  link.href = downloadUrl;
+  link.download = `shopdesk-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+
+  setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+});
+
 render();
