@@ -22,7 +22,14 @@ function loadData() {
 let shop = loadData();
 
 function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(shop));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(shop));
+    return true;
+  } catch (error) {
+    console.error('ShopDesk could not save its data.', error);
+    alert('ShopDesk could not save this change in your browser. Check available storage and export a backup before continuing.');
+    return false;
+  }
 }
 
 function formatMoney(value) {
@@ -69,8 +76,15 @@ function renderInventory() {
 
       if (!confirmed) return;
 
-      shop.products = shop.products.filter((item) => item.id !== product.id);
-      saveData();
+      const productIndex = shop.products.findIndex((item) => item.id === product.id);
+      if (productIndex === -1) return;
+
+      const [removedProduct] = shop.products.splice(productIndex, 1);
+      if (!saveData()) {
+        shop.products.splice(productIndex, 0, removedProduct);
+        return;
+      }
+
       render();
     });
 
@@ -149,15 +163,20 @@ $('productForm').addEventListener('submit', (event) => {
     return;
   }
 
-  shop.products.push({
+  const product = {
     id: crypto.randomUUID(),
     name,
     cost,
     price,
     stock
-  });
+  };
+  shop.products.push(product);
 
-  saveData();
+  if (!saveData()) {
+    shop.products.pop();
+    return;
+  }
+
   event.target.reset();
   render();
 });
@@ -182,16 +201,24 @@ $('saleForm').addEventListener('submit', (event) => {
 
   product.stock -= quantity;
 
-  shop.sales.push({
+  const sale = {
     id: crypto.randomUUID(),
     date: new Date().toISOString(),
     name: product.name,
     quantity,
     revenue: quantity * product.price,
     profit: quantity * (product.price - product.cost)
-  });
+  };
+  shop.sales.push(sale);
 
-  saveData();
+  if (!saveData()) {
+    product.stock += quantity;
+    shop.sales.pop();
+    return;
+  }
+
+  event.target.reset();
+  $('quantity').value = '1';
   render();
   message.textContent = 'Sale recorded successfully.';
 });
